@@ -1,1 +1,129 @@
-<!-- paste your current index.html content here -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lakeside Calendars</title>
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f6f7f9; }
+    h1 { margin: 0 0 10px; }
+    .links { margin-bottom: 12px; }
+    .links a { margin-right: 12px; }
+    #calendar { max-width: 1200px; margin: 0 auto; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+    .legend { display: none; margin-bottom: 12px; }
+    .legend span { margin-right: 16px; display: inline-flex; align-items: center; gap: 6px; }
+    .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  </style>
+</head>
+<body>
+  <h1>Lakeside Calendars</h1>
+  <div class="links">
+    <strong>Subscribe:</strong>
+    <a href="https://uqracing.github.io/ics/lakeside-dtc-availability.ics">DTC Availability</a>
+    <a href="https://uqracing.github.io/ics/lakeside-main.ics">Main</a>
+    <a href="https://uqracing.github.io/ics/lakeside-dtc.ics">DTC</a>
+  </div>
+  <div class="links">
+    <label><input type="checkbox" id="toggle-events"> Show events</label>
+  </div>
+
+  <div class="legend" id="legend-events">
+    <span><i class="swatch" style="background:#ff0006"></i> Main Track</span>
+    <span><i class="swatch" style="background:#feff00"></i> DTC</span>
+  </div>
+
+  <div class="legend" id="legend-availability">
+    <span><i class="swatch" style="background:#2EA836"></i> Free</span>
+    <span><i class="swatch" style="background:#00407A"></i> QUT</span>
+    <span><i class="swatch" style="background:#51247A"></i> UQ</span>
+  </div>
+
+  <div id="calendar"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/ical.js@1.5.0/build/ical.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/icalendar@6.1.11/index.global.min.js"></script>
+  <script>
+    const availabilityUrl = 'https://uqracing.github.io/ics/lakeside-dtc-availability.ics';
+    const mainUrl = 'https://uqracing.github.io/ics/lakeside-main.ics';
+    const dtcUrl = 'https://uqracing.github.io/ics/lakeside-dtc.ics';
+
+    const legendEvents = document.getElementById('legend-events');
+    const legendAvailability = document.getElementById('legend-availability');
+
+    function showLegends(showEvents) {
+      legendEvents.style.display = showEvents ? 'block' : 'none';
+      legendAvailability.style.display = showEvents ? 'none' : 'block';
+    }
+
+    const calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
+      initialView: 'dayGridMonth',
+      height: 'auto',
+      eventTimeFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
+      eventSources: [
+        { id: 'availability', url: availabilityUrl, format: 'ics' }
+      ],
+      eventDidMount: function(info) {
+        const sourceId = info.event.source && info.event.source.id;
+
+        if (sourceId === 'main') {
+          const dot = info.el.querySelector('.fc-event-dot, .fc-daygrid-event-dot');
+          if (dot) {
+            dot.style.borderColor = '#ff0006';
+            dot.style.backgroundColor = '#ff0006';
+          }
+          return;
+        }
+
+        if (sourceId === 'dtc') {
+          const dot = info.el.querySelector('.fc-event-dot, .fc-daygrid-event-dot');
+          if (dot) {
+            dot.style.borderColor = '#feff00';
+            dot.style.backgroundColor = '#feff00';
+          }
+          return;
+        }
+
+        const t = (info.event.title || '').toLowerCase();
+        let c = null;
+        if (t.includes('dtc free')) c = '#2EA836';
+        else if (t.includes('booked (qut)')) c = '#00407A';
+        else if (t.includes('booked (uq)')) c = '#51247A';
+        else if (t.includes('booked')) c = '#51247A';
+
+        if (c) {
+          info.el.style.backgroundColor = c;
+          info.el.style.borderColor = c;
+          info.el.style.color = '#ffffff';
+          const dot = info.el.querySelector('.fc-event-dot, .fc-daygrid-event-dot');
+          if (dot) {
+            dot.style.borderColor = c;
+            dot.style.backgroundColor = c;
+          }
+        }
+      }
+    });
+    calendar.render();
+    showLegends(false);
+
+    const toggle = document.getElementById('toggle-events');
+    toggle.addEventListener('change', () => {
+      const availability = calendar.getEventSourceById('availability');
+      const main = calendar.getEventSourceById('main');
+      const dtc = calendar.getEventSourceById('dtc');
+
+      if (toggle.checked) {
+        if (availability) availability.remove();
+        if (!main) calendar.addEventSource({ id: 'main', url: mainUrl, format: 'ics' });
+        if (!dtc) calendar.addEventSource({ id: 'dtc', url: dtcUrl, format: 'ics' });
+      } else {
+        if (main) main.remove();
+        if (dtc) dtc.remove();
+        if (!availability) calendar.addEventSource({ id: 'availability', url: availabilityUrl, format: 'ics' });
+      }
+      showLegends(toggle.checked);
+    });
+  </script>
+</body>
+</html>
