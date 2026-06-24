@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UQR Autonomous Stack — Architecture Map</title>
+  <style>
+    :root {
+      --uq-purple: #51247A;
+      --bg: #f6f7f9;
+      --card: #ffffff;
+      --ink: #1d1d22;
+      --muted: #6b6b72;
+      --line: #e3e3e8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      margin: 0; padding: 0 20px 60px;
+      background: var(--bg); color: var(--ink); line-height: 1.5;
+    }
+    header {
+      max-width: 1100px; margin: 0 auto; padding: 28px 0 8px;
+    }
+    h1 { margin: 0 0 6px; color: var(--uq-purple); font-size: 1.9rem; }
+    h2 {
+      margin: 0 0 14px; font-size: 1.25rem;
+      border-bottom: 2px solid var(--line); padding-bottom: 8px;
+    }
+    .sub { color: var(--muted); margin: 0 0 6px; max-width: 80ch; }
+    main { max-width: 1100px; margin: 0 auto; }
+    .card {
+      background: var(--card); border-radius: 12px; padding: 18px 20px 24px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08); margin: 22px 0;
+    }
+    .mermaid { overflow-x: auto; text-align: center; }
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 18px; margin: 10px 0 4px;
+      font-size: 0.85rem; color: var(--muted);
+    }
+    .legend span { display: inline-flex; align-items: center; gap: 7px; }
+    .key-solid, .key-dash {
+      width: 30px; height: 0; border-top: 3px solid #555; display: inline-block;
+    }
+    .key-dash { border-top: 3px dashed #999; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.88rem; margin-top: 8px; }
+    th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+    th { background: #faf8fc; color: var(--uq-purple); }
+    code { background: #f0eef4; padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+    .nav { font-size: 0.9rem; margin: 4px 0 0; }
+    .nav a { color: var(--uq-purple); margin-right: 14px; text-decoration: none; }
+    .nav a:hover { text-decoration: underline; }
+    .note {
+      background: #faf8fc; border-left: 4px solid var(--uq-purple);
+      padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 0.9rem; color: #444;
+    }
+    footer { max-width: 1100px; margin: 30px auto 0; color: var(--muted); font-size: 0.82rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>UQR Autonomous Stack — Architecture Map</h1>
+    <p class="sub">
+      How the programs, ROS&nbsp;2 topics/messages, the watchdog, and the Docker
+      environment interact across the UQRacing driverless vehicle software.
+    </p>
+    <p class="nav">
+      <a href="#flow">Data flow</a>
+      <a href="#watchdog">Watchdog</a>
+      <a href="#docker">Docker</a>
+      <a href="#missions">Missions</a>
+      <a href="#topics">Topic reference</a>
+      <a href="#gaps">Gaps</a>
+    </p>
+    <div class="legend">
+      <span><i class="key-solid"></i> Confirmed (seen in source)</span>
+      <span><i class="key-dash"></i> Inferred / un-indexed repo</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="card" id="flow">
+      <h2>1 · End-to-end data flow</h2>
+      <p class="sub">Perception → fusion → planning → control → actuation, plus the supervision and telemetry taps.</p>
+      <pre class="mermaid">
+flowchart LR
+    subgraph SENSORS["Sensors / Drivers"]
+        cam["FLIR camera driver<br/><i>flir_camera_driver_ros2</i>"]
+        lidar["LiDAR driver<br/><i>lslidar_ros2</i>"]
+        ins["SBG INS<br/><i>sbg_device</i>"]
+    end
+    subgraph PERCEPTION["Perception"]
+        conenet["conenet_ros<br/><i>camera cones (YOLOv5)</i>"]
+        conedet["cone_detector<br/><b>ConeDetectorNode</b><br/><i>LiDAR to cones</i>"]
+        stack["stack_node<br/><b>stack::ConeDetectorNode</b>"]
+        vape["vape2<br/><i>3D cone est. (inferred)</i>"]
+    end
+    subgraph PLANNING["Fusion & Path Planning"]
+        goldfish["goldfish<br/><i>cone fusion</i>"]
+        planner["delaunay_path_planner_node"]
+    end
+    subgraph CONTROL["Control"]
+        follower["path_follower"]
+        ctrl["stanley / pure-pursuit<br/><i>(inferred)</i>"]
+    end
+    subgraph ACTUATION["Actuation"]
+        vam2["vam2<br/><i>Vehicle Actuation Mgr</i>"]
+        xbox["xbox / cmdVel_tester<br/><i>manual</i>"]
+    end
+    subgraph LOCALIZATION["Localization"]
+        ekf["odom_filter_node<br/><i>EKF</i>"]
+        rsp["robot_state_publisher<br/><i>TF</i>"]
+        bicycle["bicycle_model"]
+    end
+    subgraph HW["CAN bus / Vehicle HW"]
+        can(["CAN bus"])
+        amk["AMK inverters"]
+        motec["MoTeC ECU"]
+        dfmm["DFMM<br/><i>Fault Mgmt</i>"]
+        dash["Dashboard"]
+    end
+    subgraph TELEM["Telemetry & Debug"]
+        dashdbg["dash_debug<br/><i>ROS to CAN to dash</i>"]
+    end
+
+    cam -->|"/flir_camera/image_raw : Image"| conenet
+    lidar -->|"PointCloud2"| conedet
+    lidar -->|"PointCloud2"| stack
+    conenet -->|"/VAPE/cones : NNConeDetections"| vape
+    vape -.->|"/fusion/cones : ConeArray"| goldfish
+    conedet -->|"ConeArray"| goldfish
+    stack -->|"/stack_node/cone_detections : ConeArray"| goldfish
+    goldfish -->|"ConeArray"| planner
+    goldfish -->|"/goldfish/cones : ConeArrayWithCovariance"| dashdbg
+    planner -->|"/path_planner/planned_path : nav_msgs/Path"| follower
+    planner -.->|"planned_path"| ctrl
+    follower -->|"/vam/cmdVel : AckermannDrive"| vam2
+    ctrl -.->|"/vam/cmdVel"| vam2
+    xbox -->|"/vam/cmdVel : CmdVel<br/>/vam/softEbs : Safety"| vam2
+    follower -->|"/vam/cmdVel"| dashdbg
+    vam2 -->|"AMK + MoTeC frames"| can
+    vam2 -->|"/dfmm/status : AVStatus"| dfmm
+    dfmm -->|"/dfmm/mission_finished : UInt8"| vam2
+    can --- amk
+    can --- motec
+    dashdbg -->|"CAN frames"| can
+    can --- dash
+    ins -->|"odometry"| ekf
+    can -->|"wheel data"| bicycle
+    bicycle -.->|"Odometry"| ekf
+    ekf -.->|"odom / TF"| planner
+    rsp -.->|"TF"| ekf
+
+    classDef inferred stroke-dasharray:5 5,stroke:#888,fill:#f3f3f3,color:#555;
+    class vape,ctrl inferred;
+      </pre>
+    </section>
+
+    <section class="card" id="watchdog">
+      <h2>2 · Watchdog supervision</h2>
+      <p class="sub">
+        <code>watchdog_node</code> runs separately from the stack — mission launchers
+        start the nodes, the watchdog only supervises liveness + topic heartbeats and
+        reports health over CAN.
+      </p>
+      <pre class="mermaid">
+flowchart TB
+    subgraph WD["watchdog_node"]
+        pid["ProcessMonitor<br/><i>verify PIDs (rescan ~5s)</i>"]
+        topics["Topic heartbeat monitor<br/><i>timeout + critical flag</i>"]
+        state{"State<br/>INIT / OK / FAIL_SAFE"}
+    end
+    subgraph MON["Monitored nodes (track-drive)"]
+        n1["sbg_device"]
+        n2["goldfish"]
+        n3["vam2"]
+    end
+    subgraph HB["Monitored heartbeat topics"]
+        t1["/path_planner/planned_path<br/>Path · 500ms · critical"]
+        t2["/stack_node/cone_detections<br/>ConeArray · 800ms"]
+    end
+    n1 -.PID.-> pid
+    n2 -.PID.-> pid
+    n3 -.PID.-> pid
+    t1 -->|heartbeat| topics
+    t2 -->|heartbeat| topics
+    pid --> state
+    topics --> state
+    state -->|"diagnostics : DiagnosticArray"| ros["ROS 2 graph"]
+    state -->|"CAN 0x223 · 500kbit · 8B"| can(["CAN bus"])
+    can --> ebs["EBS / ECU<br/><i>acts on state byte</i>"]
+      </pre>
+      <table>
+        <tr><th>State byte</th><th>Meaning</th></tr>
+        <tr><td><code>0x02</code></td><td>All monitored nodes running normally</td></tr>
+        <tr><td><code>0x01</code></td><td>Some nodes initialised (partial)</td></tr>
+        <tr><td><code>0x00</code></td><td>All failed / watchdog in <code>FAIL_SAFE</code> → EBS consumes this</td></tr>
+      </table>
+      <p class="sub" style="margin-top:10px">
+        CAN frame: arbitration id <code>0x223</code> (11-bit), bitrate <code>500000</code>,
+        DLC <code>8</code>. No ROS e-stop topic — state is signalled over CAN.
+        Configs: <code>watchdog_track_drive.yaml</code>, <code>watchdog_brake_test.yaml</code>,
+        <code>watchdog_inspection.yaml</code>.
+      </p>
+    </section>
+
+    <section class="card" id="docker">
+      <h2>3 · Docker environment</h2>
+      <p class="sub">ROS&nbsp;2 Humble, GPU-accelerated, with a browser-based desktop.</p>
+      <pre class="mermaid">
+flowchart LR
+    subgraph HOST["Host machine"]
+        envfile[".env<br/><i>WORKSPACE_PATHS<br/>NVIM_CONFIG_PATH<br/>ROSBAG_DIR</i>"]
+        scripts["setup.sh / run.sh / lib.sh<br/><i>gen override</i>"]
+        ws["Component workspaces<br/><i>stack, vam2, watchdog…</i>"]
+        bags["ROS 2 bags"]
+        browser["Browser :8080"]
+        foxglove["Foxglove :8765"]
+    end
+    subgraph COMPOSE["docker compose"]
+        novnc["<b>novnc</b><br/><i>theasp/novnc</i><br/>desktop 1920x1080 · :8080"]
+        dev["<b>ros_dev_env</b> (ros-dev-vm)<br/>CUDA + ROS 2 Humble<br/>VirtualGL · nvim · clangd<br/>DISPLAY=novnc:0.0 · :8765"]
+        dev -->|depends_on| novnc
+    end
+    envfile --> scripts
+    scripts -->|"mount each ws at<br/>/ros2_ws/src/&lt;name&gt;"| dev
+    ws -.volume.-> dev
+    bags -.->|"/ros2_bags"| dev
+    browser --> novnc
+    foxglove --> dev
+    dev -->|"GL via vglrun<br/>(RViz2, Gazebo)"| novnc
+      </pre>
+    </section>
+
+    <section class="card" id="missions">
+      <h2>4 · Mission launch composition</h2>
+      <p class="sub"><code>mission_launchers</code> wires reusable launch blocks into full missions.</p>
+      <pre class="mermaid">
+flowchart TB
+    subgraph COMPONENTS["launch/components/ (reusable)"]
+        perc["perception.launch.py<br/><i>container + stack::ConeDetectorNode + LiDAR</i>"]
+        odom["odom.launch.py<br/><i>EKF</i>"]
+        tf["tf.launch.py<br/><i>robot_state_publisher</i>"]
+        cvt["cmdVel_tester.launch.py"]
+    end
+    subgraph MISSIONS["launch/comp/ (missions)"]
+        sel["mission_select.launch.py"]
+        track["trackdrive.launch.py"]
+        brake["brake_test.launch.py"]
+        insp["inspection_mission.launch.py"]
+    end
+    wd_t["watchdog_track_drive.yaml"]
+    wd_b["watchdog_brake_test.yaml"]
+    wd_i["watchdog_inspection.yaml"]
+    sel --> track
+    sel --> brake
+    sel --> insp
+    track --> perc
+    track --> odom
+    track --> tf
+    track -.-> wd_t
+    brake --> perc
+    brake -.-> wd_b
+    insp -->|"tech_insp_mission.py"| insp_node["tech_insp_mission"]
+    insp -.-> wd_i
+      </pre>
+      <p class="note">Acceleration / skidpad / autocross launch files were not surfaced by the search index — see Gaps.</p>
+    </section>
+
+    <section class="card" id="topics">
+      <h2>5 · ROS topic reference (confirmed)</h2>
+      <table>
+        <tr><th>Publisher</th><th>Topic</th><th>Message type</th><th>Subscriber</th></tr>
+        <tr><td>FLIR driver</td><td><code>/flir_camera/image_raw</code></td><td>sensor_msgs/Image</td><td>conenet_ros</td></tr>
+        <tr><td>conenet_ros</td><td><code>/VAPE/cones</code></td><td>NNConeDetections</td><td>vape2</td></tr>
+        <tr><td>cone_detector</td><td>(cone topic)</td><td>eufs_msgs/ConeArray</td><td>planner / fusion</td></tr>
+        <tr><td>stack_node</td><td><code>/stack_node/cone_detections</code></td><td>eufs_msgs/ConeArray</td><td>watchdog, fusion</td></tr>
+        <tr><td>goldfish</td><td><code>/goldfish/cones</code></td><td>eufs_msgs/ConeArrayWithCovariance</td><td>dash_debug</td></tr>
+        <tr><td>delaunay_path_planner_node</td><td><code>/path_planner/planned_path</code></td><td>nav_msgs/Path</td><td>path_follower, watchdog</td></tr>
+        <tr><td>path_follower</td><td><code>/vam/cmdVel</code></td><td>ackermann_msgs/AckermannDrive</td><td>vam2, dash_debug</td></tr>
+        <tr><td>xbox</td><td><code>/vam/cmdVel</code>, <code>/vam/softEbs</code>, …</td><td>CmdVel, Safety, …</td><td>vam2</td></tr>
+        <tr><td>vam2</td><td><code>/dfmm/status</code></td><td>uqr_msgs/AVStatus</td><td>DFMM</td></tr>
+        <tr><td>DFMM</td><td><code>/dfmm/mission_finished</code></td><td>std_msgs/UInt8</td><td>vam2</td></tr>
+        <tr><td>bicycle_model</td><td>(odom topic)</td><td>nav_msgs/Odometry</td><td>EKF</td></tr>
+        <tr><td>watchdog_node</td><td><code>diagnostics</code></td><td>diagnostic_msgs/DiagnosticArray</td><td>ROS graph</td></tr>
+      </table>
+    </section>
+
+    <section class="card" id="gaps">
+      <h2>6 · Confidence & gaps</h2>
+      <p><strong>Confirmed</strong> (seen in source): Docker compose/Dockerfile/scripts; <code>uqr_ws</code> <code>.repos</code> inventory; watchdog node, config and CAN behaviour; mission launch structure; the topic edges above.</p>
+      <p><strong>Inferred</strong> (dashed): the exact perception→planning→control ordering; that <code>cone_detector</code> ≈ "lidar_processing"; that <code>stack_node</code> wraps detection in the <code>stack</code> monorepo; that <code>0x00</code> drives an EBS consumer.</p>
+      <p><strong>Could not surface</strong> (no code-search hits, likely un-indexed private repos): <code>lidar_processing</code>, <code>vape2</code>, <code>glim-stack</code>, <code>stanley_steering</code>, <code>pure-pursuit-trajectory-follower</code>, <code>backup_path_planner</code>, <code>lora_telem</code>; the <code>stack</code> monorepo internals; <code>velocity_compensation</code> / <code>flir_camera_driver_ros2</code> / <code>lslidar_ros2</code> internals; acceleration/skidpad/autocross/EBS launch files; <code>dash_debug</code>'s full subscription list.</p>
+      <p class="note">To upgrade any inferred edge to confirmed, add the relevant repo to the session scope (or run against a full <code>uqr_ws</code> checkout) and regenerate.</p>
+    </section>
+  </main>
+
+  <footer>
+    Reconstructed from <code>uqracing-docker</code>, <code>uqr_ws</code>, <code>watchdog</code>,
+    <code>mission_launchers</code> and component repos via GitHub code search.
+    Diagrams rendered with <a href="https://mermaid.js.org/">Mermaid</a>.
+  </footer>
+
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'base',
+      themeVariables: {
+        primaryColor: '#ffffff',
+        primaryBorderColor: '#51247A',
+        primaryTextColor: '#1d1d22',
+        lineColor: '#555',
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '14px'
+      },
+      flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' }
+    });
+  </script>
+</body>
+</html>
